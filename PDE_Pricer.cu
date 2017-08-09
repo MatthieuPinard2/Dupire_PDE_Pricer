@@ -167,15 +167,15 @@ __inline__ __device__ float ExplicitHandler(const float * __restrict__ pastV,   
 }
 
 // Kernel for explicit scheme applied to American options.
-__global__ void ExplicitKernel_American(float * __restrict__ Grid,				// The PDE grid (output)
-                                        const float * __restrict__ S,			// Value of asset
-                                        const float * __restrict__ r,			// Risk-free rate
-                                        const float * __restrict__ q,			// Dividend yield
+__global__ void ExplicitKernel_American(float * __restrict__ Grid,		// The PDE grid (output)
+                                        const float * __restrict__ S,		// Value of asset
+                                        const float * __restrict__ r,		// Risk-free rate
+                                        const float * __restrict__ q,		// Dividend yield
                                         const float * __restrict__ sigma,		// Volatility
-                                        const float deltaT,						// Time precision
-                                        const float deltaS,						// Asset precision
-                                        const float * __restrict__ minBoundary, // Values of derivative for S = minS
-                                        const float * __restrict__ maxBoundary, // Values of derivative for S = maxS
+                                        const float deltaT,			// Time precision
+                                        const float deltaS,			// Asset precision
+                                        const float * __restrict__ minBoundary,         // Values of derivative for S = minS
+                                        const float * __restrict__ maxBoundary,         // Values of derivative for S = maxS
                                         const int sizeS, const int sizeT) {		// The number of elements for S-axis and T-axis
     int i = threadIdx.x + blockDim.x * blockIdx.x;
     if (i < sizeS) {
@@ -207,15 +207,15 @@ __global__ void ExplicitKernel_American(float * __restrict__ Grid,				// The PDE
 }
 
 // Kernel for explicit scheme applied to European options.
-__global__ void ExplicitKernel_European(float * __restrict__ Grid,				// The PDE grid (output)
-                                        const float * __restrict__ S,			// Value of asset
-                                        const float * __restrict__ r,			// Risk-free rate
-                                        const float * __restrict__ q,			// Dividend yield
+__global__ void ExplicitKernel_European(float * __restrict__ Grid,		// The PDE grid (output)
+                                        const float * __restrict__ S,		// Value of asset
+                                        const float * __restrict__ r,		// Risk-free rate
+                                        const float * __restrict__ q,		// Dividend yield
                                         const float * __restrict__ sigma,		// Volatility
-                                        const float deltaT,						// Time precision
-                                        const float deltaS,						// Asset precision
-                                        const float * __restrict__ minBoundary, // Values of derivative for S = minS
-                                        const float * __restrict__ maxBoundary, // Values of derivative for S = maxS
+                                        const float deltaT,			// Time precision
+                                        const float deltaS,			// Asset precision
+                                        const float * __restrict__ minBoundary,         // Values of derivative for S = minS
+                                        const float * __restrict__ maxBoundary,         // Values of derivative for S = maxS
                                         const int sizeS, const int sizeT) {		// The number of elements for S-axis and T-axis
     int i = threadIdx.x + blockDim.x * blockIdx.x;
     if (i < sizeS) {
@@ -364,7 +364,7 @@ __global__ void ImplicitKernel_American(float * __restrict__ NewValues,
                                         const int SizeS, const int SizeT) {
     extern __shared__ float Array[];
     int i = threadIdx.x + blockDim.x * blockIdx.x;
-    float Up, Down, r, _Payoff, _D, _UD, _LD;
+    float r, _Payoff, _D, _UD, _LD;
     float old_val, S;
     if (i < SizeS) {
         _Payoff = NewValues[i - SizeS];
@@ -405,30 +405,30 @@ __global__ void ImplicitKernel_American(float * __restrict__ NewValues,
 
 class BlackScholesPDE {
 private:
-    int sizeS;					// Dimension of grid (S-axis)
-    int sizeT;					// Dimension of grid (T-axis)
-    float minT;					// Minimum value of T
-    float maxT;					// Maximum value of T
-    float minS;					// Minimum value of S
-    float maxS;					// Maximum value of S
-    float* sigma;				// Local Volatility. 
-                                // Should be given as a row-ordered matrix with 
-                                // Rows = sizeT (1st row <=> t = T and last row <=> t = 0), Cols = sizeS
-    float* r;					// Instantaneous Risk-free rate
-                                // Should be given as a vector of size sizeT, with 1st element <=> t = T and last element <=> t = 0
-    float* q;					// Instantaneous Dividend yield
-                                // Should be given as a vector of size sizeT, with 1st element <=> t = T and last element <=> t = 0
-    float deltaT;				// Implied from minT, maxT and sizeT
-    float deltaS;				// Implied from minS, maxS and sizeS
-    float* Grid;				// Stores the PDE grid into the GPU.
-    float* cpuGrid;				// Stores the PDE grid into the CPU.
-    float* MinBoundary;			// Stores the Dirichlet boundary for S = minS.
-    float* MaxBoundary;			// Stores the Dirichlet boundary for S = maxS.
-    float* Saxis;				// Stores the values taken by the asset.
-    float* Integral_r;			// Stores the integrated risk-free rate.
-    float* Integral_q;			// Stores the integrated dividend yield.
-    float* Integral_r_CPU;		// Stores the integrated risk-free rate in central memory.
-    float* Integral_q_CPU;		// Stores the integrated dividend yield in central memory.
+    int sizeS;		// Dimension of grid (S-axis)
+    int sizeT;		// Dimension of grid (T-axis)
+    float minT;		// Minimum value of T
+    float maxT;		// Maximum value of T
+    float minS;		// Minimum value of S
+    float maxS;		// Maximum value of S
+    float* sigma;		// Local Volatility. 
+                                 // Should be given as a row-ordered matrix with 
+                                 // Rows = sizeT (1st row <=> t = T and last row <=> t = 0), Cols = sizeS
+    float* r;		// Instantaneous Risk-free rate
+                                 // Should be given as a vector of size sizeT, with 1st element <=> t = T and last element <=> t = 0
+    float* q;	           // Instantaneous Dividend yield
+                                 // Should be given as a vector of size sizeT, with 1st element <=> t = T and last element <=> t = 0
+    float deltaT;		// Implied from minT, maxT and sizeT
+    float deltaS;		// Implied from minS, maxS and sizeS
+    float* Grid;		// Stores the PDE grid into the GPU.
+    float* cpuGrid;		// Stores the PDE grid into the CPU.
+    float* MinBoundary;	// Stores the Dirichlet boundary for S = minS.
+    float* MaxBoundary;	// Stores the Dirichlet boundary for S = maxS.
+    float* Saxis;		// Stores the values taken by the asset.
+    float* Integral_r;	// Stores the integrated risk-free rate.
+    float* Integral_q;	// Stores the integrated dividend yield.
+    float* Integral_r_CPU;	// Stores the integrated risk-free rate in central memory.
+    float* Integral_q_CPU;	// Stores the integrated dividend yield in central memory.
 public:
     BlackScholesPDE(
         int _sizeT, int _sizeS,
