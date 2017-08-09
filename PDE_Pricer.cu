@@ -2,9 +2,14 @@
 #include <exception>
 #include <device_launch_parameters.h>
 #include <cuda_runtime.h>
-#include <chrono>
 #include <string>
-#include <algorithm>
+
+// Threads per Block, 256 is shown to give optimal results for the Kepler architecture.
+#define TPB 256 
+
+// Used for SOR/PSOR Kernel, 6 iterations have shown to provide with good accuracy at moderate cost with Omega = 1.3.
+#define PSOR_ITERATIONS 6
+#define PSOR_OMEGA 1.3f
 
 // Bench CUDA Kernels using a templated C++ function
 template <class fn>
@@ -28,13 +33,6 @@ void Bench(int Repetitions,       // The number of times the benchmark has to be
     // Display the average of running times
     std::cout << Message << ": Time Elapsed = " << total_elapsed_time / double(Repetitions) << " ms \n";
 }
-
-// Threads per Block, 256 is shown to give optimal results for the Kepler architecture.
-#define TPB 256 
-
-// Used for SOR/PSOR Kernel, 6 iterations have shown to provide with good accuracy at moderate cost with Omega = 1.3.
-#define PSOR_ITERATIONS 6
-#define PSOR_OMEGA 1.3f
 
 // Wrapper around cudaMalloc().
 inline float * cudaAlloc(size_t n) {
