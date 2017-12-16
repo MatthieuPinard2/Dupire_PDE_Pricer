@@ -146,20 +146,17 @@ __inline__ __device__ float ExplicitHandler(const float * __restrict__ pastV,   
     float Gamma = -Order1 - Order2;
     float Mid = pastV[i];
     float Down, Up;
-    if (i == 0) {
-        // Lower bound.
-        Down = minBoundary;
-        Up = pastV[i + 1];
-    }
-    else if (i == SizeS - 1) {
-        // Upper bound.
+    if (i > 0) {
         Down = pastV[i - 1];
-        Up = maxBoundary;
     }
     else {
-        // Tridiagonal case.
-        Down = pastV[i - 1];
+        Down = minBoundary;
+    }
+    if (i < SizeS - 1) {
         Up = pastV[i + 1];
+    }
+    else {
+        Up = maxBoundary;
     }
     return (Alpha * Down + Beta * Mid + Gamma * Up);
 }
