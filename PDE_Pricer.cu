@@ -144,7 +144,6 @@ __inline__ __device__ float ExplicitHandler(const float * __restrict__ pastV,   
     float Alpha = Order1 - Order2;
     float Beta = 1.f + r * deltaT + 2.f * Order2;
     float Gamma = -Order1 - Order2;
-    float Mid = pastV[i];
     float Down, Up;
     if (i > 0) {
         Down = pastV[i - 1];
@@ -158,7 +157,7 @@ __inline__ __device__ float ExplicitHandler(const float * __restrict__ pastV,   
     else {
         Up = maxBoundary;
     }
-    return (Alpha * Down + Beta * Mid + Gamma * Up);
+    return (Alpha * Down + Beta * pastV[i] + Gamma * Up);
 }
 
 // Kernel for explicit scheme applied to American options.
