@@ -24,6 +24,7 @@ void Bench(int Repetitions,       // The number of times the benchmark has to be
     for (int i = 0; i < Repetitions; ++i) {
         cudaEventRecord(start);
         Function();
+        cudaDeviceSynchronize();
         cudaEventRecord(stop);
         cudaEventSynchronize(stop);
         float iteration_elapsed_time = 0.f;
@@ -239,8 +240,7 @@ __global__ void ExplicitKernel_European(float * __restrict__ Grid,		            
 
 // Handler for Implicit kernels. Basically computes the tridiagonal system given the value of the derivative at T and 
 // local parameters and returns new_val
-__inline__ __device__ float ImplicitHandler(float * __restrict__ newV,     // Is set to new_val. (output)
-                                            float * __restrict__ Array,    // Shared memory. Is set to new_val (output)
+__inline__ __device__ float ImplicitHandler(float * __restrict__ Array,    // Shared memory. Is set to new_val (output)
                                             float & __restrict__ _LD,      // The lower diagonal element (output)
                                             float & __restrict__ _D,       // The diagonal element (output)
                                             float & __restrict__ _UD,      // The upper diagonal element (output)
@@ -256,7 +256,6 @@ __inline__ __device__ float ImplicitHandler(float * __restrict__ newV,     // Is
                                             const int i,                   // Space index
                                             const int SizeS) {             // Size of S-axis
     // Computation of the tridiagnonal value given the BS-Dupire parameters
-    newV[i] = new_val;
     float old_val = new_val;
     float Base = (deltaT * S) / (2.f * deltaS);
     float Order1 = Base * (_r - _q);
@@ -286,8 +285,7 @@ __inline__ __device__ float SORHandler(const float * __restrict__ Array,     // 
                                        const int SizeS) {                    // Size of S-axis
     float Up = (i > SizeS - 2) ? 0.f : Array[i + 1];
     float Down = (i < 1) ? 0.f : Array[i - 1];
-    float r = (1.f - PSOR_OMEGA) * Array[i] + (PSOR_OMEGA / _D) * (old_val - _LD * Down - _UD * Up);
-    return r;
+    return (1.f - PSOR_OMEGA) * Array[i] + (PSOR_OMEGA / _D) * (old_val - _LD * Down - _UD * Up);
 }
 
 // Kernel for implicit scheme applied to European options.
@@ -303,40 +301,20 @@ __global__ void ImplicitKernel_European(float * __restrict__ NewValues,         
                                         const int SizeS, const int SizeT) {               // Sizes of S- and T-axes
     extern __shared__ float Array[];
     int i = threadIdx.x + blockDim.x * blockIdx.x;
-    float _D, _UD, _LD, old_val, S;
+    float _D, _UD, _LD, old_val, S, X;
     if (i < SizeS) {
         S = _S[i];
         // Iterate over time steps. j = 0 equals the maturity, and j = sizeT - 1 is today.
         for (int j = 1; j < SizeT; ++j) {
-            old_val = ImplicitHandler(NewValues, Array, _LD, _D, _UD,
+            old_val = ImplicitHandler(Array, _LD, _D, _UD,
                                       _Sigma[i], NewValues[i - SizeS], S,
                                       deltaT, deltaS, R[j], Q[j], minBoundary[j], 
                                       maxBoundary[j], i, SizeS);
-            // This synchronization is used so all threads are in the same time step!
-            __syncthreads();
-            // Case "Red" : even threads
-            if (!(i & 1)) {
-                // Iterate PSOR_ITERATIONS times
-                for (int k = 0; k < PSOR_ITERATIONS; ++k) {
-                    Array[i] = SORHandler(Array, old_val, _LD, _D, _UD, i, SizeS);
-                    // Synchronize Black and Red threads.
-                    __syncthreads();
-                    // While "Black" threads are computing, do nothing.
-                    // Synchronize Black and Red threads.
-                    __syncthreads();
-                }
-            }
-            // Case "Black" : odd threads
-            else {
-                // Iterate PSOR_ITERATIONS times
-                for (int k = 0; k < PSOR_ITERATIONS; ++k) {
-                    // While "Red" threads are computing, do nothing.
-                    // Synchronize Black and Red threads.
-                    __syncthreads();
-                    Array[i] = SORHandler(Array, old_val, _LD, _D, _UD, i, SizeS);
-                    // Synchronize Black and Red threads.
-                    __syncthreads();
-                }
+            for (int k = 0; k < PSOR_ITERATIONS; ++k) {
+                __syncthreads();
+                X = SORHandler(Array, old_val, _LD, _D, _UD, i, SizeS);
+                __syncthreads();
+                Array[i] = X;
             }
             NewValues[i] = Array[i];
             NewValues += SizeS;
@@ -358,37 +336,23 @@ __global__ void ImplicitKernel_American(float * __restrict__ NewValues,
                                         const int SizeS, const int SizeT) {
     extern __shared__ float Array[];
     int i = threadIdx.x + blockDim.x * blockIdx.x;
-    float r, _Payoff, _D, _UD, _LD;
-    float old_val, S;
+    float _Payoff, _D, _UD, _LD;
+    float old_val, S, X;
     if (i < SizeS) {
         _Payoff = NewValues[i - SizeS];
         S = _S[i];
         // Iterate for each time step using an implicit PSOR scheme.
         for (int j = 1; j < SizeT; ++j) {
-            old_val = ImplicitHandler(NewValues, Array, _LD, _D, _UD,
+            old_val = ImplicitHandler(Array, _LD, _D, _UD,
                                       _Sigma[i], NewValues[i - SizeS], S,
                                       deltaT, deltaS, R[j], Q[j], minBoundary[j], 
                                       maxBoundary[j], i, SizeS);
-            __syncthreads();
-            if (!(i & 1)) {
-                for (int k = 0; k < PSOR_ITERATIONS; ++k) {
-                    r = SORHandler(Array, old_val, _LD, _D, _UD, i, SizeS);
-                    // This maximum condition guarantees the American exercise-style of the option !
-                    r = max(_Payoff, r);
-                    Array[i] = r;
-                    __syncthreads();
-                    __syncthreads();
-                }
-            }
-            else {
-                for (int k = 0; k < PSOR_ITERATIONS; ++k) {
-                    __syncthreads();
-                    r = SORHandler(Array, old_val, _LD, _D, _UD, i, SizeS);
-                    // This maximum condition guarantees the American exercise-style of the option !
-                    r = max(_Payoff, r);
-                    Array[i] = r;
-                    __syncthreads();
-                }
+            for (int k = 0; k < PSOR_ITERATIONS; ++k) {
+                __syncthreads();
+                X = SORHandler(Array, old_val, _LD, _D, _UD, i, SizeS);
+                X = max(_Payoff, X);
+                __syncthreads();
+                Array[i] = X;
             }
             NewValues[i] = Array[i];
             NewValues += SizeS;
@@ -644,14 +608,13 @@ int main() {
         minS, maxS,
         r, q, sigma);
     float Strike = 100.f;
-    Solver.EuropeanCall(Strike);
-    //Solver.AmericanPut(Strike);
+    //Solver.EuropeanCall(Strike);
+    Solver.AmericanPut(Strike);
     Bench(50, "ImplicitSolving_European", [&]() {
         //Solver.ExplicitSolving_European();
         //Solver.ExplicitSolving_American();
-        Solver.ImplicitSolving_European();
-        //Solver.ImplicitSolving_American();
-        cudaDeviceSynchronize();
+        //Solver.ImplicitSolving_European();
+        Solver.ImplicitSolving_American();
     });
     Solver.CopyToCPU();
     
