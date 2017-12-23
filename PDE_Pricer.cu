@@ -7,9 +7,9 @@
 // Threads per Block, 256 is shown to give optimal results for the Kepler architecture.
 #define TPB 256 
 
-// Used for SOR/PSOR Kernel, 6 iterations have shown to provide with good accuracy at moderate cost with Omega = 1.3.
-#define PSOR_ITERATIONS 6
-#define PSOR_OMEGA 1.3f
+// Used for the (Projected) Jacobi Kernel, 6 iterations have shown to provide with good accuracy at moderate cost with Omega = 0.9.
+#define JACOBI_ITERATIONS 6
+#define JACOBI_RELAX 0.9f
 
 // Bench CUDA Kernels using a templated C++ function
 template <class fn>
@@ -239,7 +239,7 @@ __global__ void ExplicitKernel_European(float * __restrict__ Grid,		            
 }
 
 // Handler for Implicit kernels. Basically computes the tridiagonal system given the value of the derivative at T and 
-// local parameters and returns new_val
+// local parameters.
 __inline__ __device__ float ImplicitHandler(float * __restrict__ Array,    // Shared memory. Is set to new_val (output)
                                             float & __restrict__ _LD,      // The lower diagonal element (output)
                                             float & __restrict__ _D,       // The diagonal element (output)
@@ -275,17 +275,17 @@ __inline__ __device__ float ImplicitHandler(float * __restrict__ Array,    // Sh
     return old_val;
 }
 
-// Computes an iteration of the SOR algorithm. 
-__inline__ __device__ float SORHandler(const float * __restrict__ Array,     // "Neighbours" previous iteration values
-                                       const float old_val,                  // Previous iteration value
-                                       const float _LD,                      // The lower diagonal element
-                                       const float _D,                       // The diagonal element
-                                       const float _UD,                      // The upper diagonal element
-                                       const int i,                          // Space index
-                                       const int SizeS) {                    // Size of S-axis
+// Computes an iteration of the Jacobi iterative solving algorithm. 
+__inline__ __device__ float JacobiHandler(const float * __restrict__ Array,     // "Neighbours" previous iteration values
+                                          const float old_val,                  // Previous iteration value
+                                          const float _LD,                      // The lower diagonal element
+                                          const float _D,                       // The diagonal element
+                                          const float _UD,                      // The upper diagonal element
+                                          const int i,                          // Space index
+                                          const int SizeS) {                    // Size of S-axis
     float Up = (i > SizeS - 2) ? 0.f : Array[i + 1];
     float Down = (i < 1) ? 0.f : Array[i - 1];
-    return (1.f - PSOR_OMEGA) * Array[i] + (PSOR_OMEGA / _D) * (old_val - _LD * Down - _UD * Up);
+    return (1.f - JACOBI_RELAX) * Array[i] + (JACOBI_RELAX / _D) * (old_val - _LD * Down - _UD * Up);
 }
 
 // Kernel for implicit scheme applied to European options.
@@ -310,9 +310,9 @@ __global__ void ImplicitKernel_European(float * __restrict__ NewValues,         
                                       _Sigma[i], NewValues[i - SizeS], S,
                                       deltaT, deltaS, R[j], Q[j], minBoundary[j], 
                                       maxBoundary[j], i, SizeS);
-            for (int k = 0; k < PSOR_ITERATIONS; ++k) {
+            for (int k = 0; k < JACOBI_ITERATIONS; ++k) {
                 __syncthreads();
-                X = SORHandler(Array, old_val, _LD, _D, _UD, i, SizeS);
+                X = JacobiHandler(Array, old_val, _LD, _D, _UD, i, SizeS);
                 __syncthreads();
                 Array[i] = X;
             }
@@ -341,15 +341,15 @@ __global__ void ImplicitKernel_American(float * __restrict__ NewValues,
     if (i < SizeS) {
         _Payoff = NewValues[i - SizeS];
         S = _S[i];
-        // Iterate for each time step using an implicit PSOR scheme.
+        // Iterate for each time step using an implicit scheme + Projected Relaxed Jacobi solving.
         for (int j = 1; j < SizeT; ++j) {
             old_val = ImplicitHandler(Array, _LD, _D, _UD,
                                       _Sigma[i], NewValues[i - SizeS], S,
                                       deltaT, deltaS, R[j], Q[j], minBoundary[j], 
                                       maxBoundary[j], i, SizeS);
-            for (int k = 0; k < PSOR_ITERATIONS; ++k) {
+            for (int k = 0; k < JACOBI_ITERATIONS; ++k) {
                 __syncthreads();
-                X = SORHandler(Array, old_val, _LD, _D, _UD, i, SizeS);
+                X = JacobiHandler(Array, old_val, _LD, _D, _UD, i, SizeS);
                 X = max(_Payoff, X);
                 __syncthreads();
                 Array[i] = X;
